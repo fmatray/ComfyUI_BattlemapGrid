@@ -1,10 +1,11 @@
 from PIL import Image, ImageDraw, ImageColor, ImageFilter
 import math
-from colorsys import rgb_to_hsv, hsv_to_rgb
+from dataclasses import dataclass
 from random import random, randint, seed, choice
-from .utils import pil_to_tensor
+from .utils import pil_to_tensor, generate_noise
 
 
+@dataclass
 class BattlemapMapGenerator:
     @classmethod
     def INPUT_TYPES(cls):
@@ -16,6 +17,64 @@ class BattlemapMapGenerator:
             "grid_height": ("INT", {"default": 32, "min": 10, "max": 128}),
             "grid_side": ("INT", {"default": 32, "min": 10, "max": 2048}),
             "bg_color": ("STRING", {"default": "#FFFFFF"}),
+        }
+        }
+
+    @classmethod
+    @property
+    def RETURN_TYPES(cls):
+        return ("IMAGE", "INT", "INT",
+                "INT", "INT", "INT")
+
+    @classmethod
+    @property
+    def RETURN_NAMES(cls):
+        return ("image", "image width", "image height",
+                "grid width", "grid height", "grid side")
+
+    FUNCTION = "map_generator"
+    CATEGORY = "Battlemaps"
+
+    def generate_image(self, width, height, bg_color):
+        image = Image.new("RGBA", (width, height), bg_color)
+        return image
+
+    def generate_bg(self, image, draw, bg_color):
+        r, g, b = ImageColor.getcolor(bg_color, "RGB")
+        step = 5
+        for x in range(0, image.width + step, step):
+            for y in range(0, image.height + step, step):
+                color = (min(abs(r + randint(-100, 100)), 255),
+                         min(abs(g + randint(-100, 100)), 255),
+                         min(abs(b + randint(-100, 100)), 255))
+                draw.ellipse([(x - step / 2, y - step / 2),
+                              (x + step / 2, y + step / 2)],
+                             fill=color)
+        generate_noise(image, 0, 0, image.width, image.height)
+
+    def _map_generator(self, node_seed, grid_width, grid_height,
+                       grid_side, bg_color):
+        seed(node_seed)
+        width, height = grid_width * grid_side, grid_height * grid_side
+        image_pil = self.generate_image(width, height, bg_color)
+        draw = ImageDraw.Draw(image_pil)
+        self.generate_bg(image_pil, draw, bg_color)
+
+        return (image_pil, width, height, grid_width, grid_height, grid_side)
+
+    def map_generator(self, node_seed, grid_width, grid_height,
+                      grid_side, bg_color):
+        image_pil, width, height, grid_width, grid_height, grid_side = self._map_generator(
+            node_seed, grid_width, grid_height, grid_side, bg_color)
+        return (pil_to_tensor(image_pil),
+                width, height, grid_width, grid_height, grid_side)
+
+
+class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
+    @classmethod
+    def INPUT_TYPES(cls):
+        inputs = super().INPUT_TYPES()
+        inputs['required'].update({
             "river": (
                 "BOOLEAN",
                 {"default": True, "label_off": "OFF", "label_on": "ON"}),
@@ -29,49 +88,20 @@ class BattlemapMapGenerator:
                 "BOOLEAN",
                 {"default": True, "label_off": "OFF", "label_on": "ON"}),
 
-        }
-        }
-
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING",
-                    "INT", "INT",
-                    "INT", "INT", "INT")
-    RETURN_NAMES = ("image", "positive prompt", "negative prompt",
-                    "image width", "image height",
-                    "grid width", "grid height", "grid side")
-    FUNCTION = "map_generator"
-    CATEGORY = "Battlemaps"
-
-    def generate_noise(self, image, x1, y1, x2, y2, padding=0):
-        def noise_color(i, j, color_index):
-            noise = randint(-128, 128)
-            return max(0, min(pixels[i, j][color_index] + noise, 255))
-
-        pixels = image.load()
-        for i in range(x1 - padding, x2 + padding):
-            for j in range(y1 - padding, y2 + padding):
-                try:
-                    pixels[i, j] = (
-                        noise_color(i, j, 0),
-                        noise_color(i, j, 1),
-                        noise_color(i, j, 2)
-                    )
-                except IndexError:
-                    pass
-
-    def generate_image(self, width, height, bg_color):
-        image = Image.new("RGBA", (width, height), bg_color)
-        return image
-
-    def generate_bg(self, image, draw, bg_color):
-        r, g, b = ImageColor.getcolor(bg_color, "RGB")
-
-        for x in range(0, image.width + 10, 10):
-            for y in range(0, image.height + 10, 10):
-                color = (min(abs(r + randint(-100, 100)), 255),
-                         min(abs(g + randint(-100, 100)), 255),
-                         min(abs(b + randint(-100, 100)), 255))
-                draw.ellipse([(x - 4, y - 4), (x + 4, y + 4)], fill=color)
-        self.generate_noise(image, 0, 0, image.width, image.height)
+        })
+        return inputs
+    @classmethod
+    @property
+    def RETURN_TYPES(cls):
+        return_types = list(super().RETURN_TYPES)
+        return_types.extend(["STRING", "STRING"])
+        return tuple(return_types)
+    @classmethod
+    @property
+    def RETURN_NAMES(cls):
+        return_names = list(super().RETURN_NAMES)
+        return_names.extend(["positive prompt", "negative prompt"])
+        return tuple(return_names)
 
     def generator_flowers(self, image, draw):
         pass
@@ -144,8 +174,8 @@ class BattlemapMapGenerator:
                 y = point[1] + math.ceil(l * math.sin(angle * math.pi / 180))
                 draw.line([point, (x, y)],
                           fill=color, width=7 + randint(-2, 2))
-        self.generate_noise(image, point[0] - size, point[1] - size,
-                            point[0] + size, point[1] + size, 10)
+        generate_noise(image, point[0] - size, point[1] - size,
+                       point[0] + size, point[1] + size, 10)
 
     def generate_polygon(self, image, draw, size_color, nb_point):
         point = randint(0, image.width), randint(0, image.height)
@@ -158,8 +188,8 @@ class BattlemapMapGenerator:
                 y = point[1] + math.ceil(l * math.sin(angle * math.pi / 180))
                 point_list.append((x, y))
             draw.polygon(point_list, fill=color, outline="black", width=2)
-        self.generate_noise(image, point[0] - size, point[1] - size,
-                            point[0] + size, point[1] + size, 10)
+        generate_noise(image, point[0] - size, point[1] - size,
+                       point[0] + size, point[1] + size, 10)
 
     def generate_ellipses(self, image, draw, size_color):
         point = randint(0, image.width), randint(0, image.height)
@@ -177,7 +207,7 @@ class BattlemapMapGenerator:
             draw.ellipse(
                 [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))],
                 fill=color, outline="black", width=2)
-        self.generate_noise(image, x_min, y_min, x_max, y_max, 10)
+        generate_noise(image, x_min, y_min, x_max, y_max, 10)
 
     def generate_rocks(self, image, draw):
         for i in range(10):
@@ -228,5 +258,5 @@ class BattlemapMapGenerator:
             negative.append("trees")
 
         return (pil_to_tensor(image_pil),
-                ".\n".join(positive), ".\n".join(negative),
-                width, height, grid_width, grid_height, grid_side)
+                width, height, grid_width, grid_height, grid_side,
+                ".\n".join(positive), ".\n".join(negative))
