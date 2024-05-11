@@ -202,7 +202,7 @@ class BattlemapMapGenerator:
         draw = ImageDraw.Draw(image_pil)
         self.generate_bg(image_pil, draw, bg_color)
 
-        positive.append("BattleMap, outdoor, old medieval.")
+        positive.append("Battlemap, outdoor, old medieval.")
         positive.append("lightgreen background grass with small flowers")
         if river:
             self.generate_rivers(image_pil, draw)
