@@ -19,7 +19,7 @@ def pil_to_tensor(image_pil: Image):
 
 def generate_noise(image, point1: Point, point2: Point, padding=0):
     def noise_color(i, j, color_index):
-        noise = randint(-128, 128)
+        noise = randint(-64, 64)
         return max(0, min(pixels[i, j][color_index] + noise, 255))
 
     pixels = image.load()

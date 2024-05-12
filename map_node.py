@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from random import random, randint, seed, choice
 from .utils import pil_to_tensor, generate_noise
 from .point import Point
+from colorsys import rgb_to_hsv, hsv_to_rgb
 
 
 @dataclass
@@ -88,7 +89,8 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
             "rocks": (
                 "BOOLEAN",
                 {"default": True, "label_off": "OFF", "label_on": "ON"}),
-
+            "positive": ("STRING", {"default": '', "multiline": True}),
+            "negative": ("STRING", {"default": '', "multiline": True}),
         })
         return inputs
 
@@ -132,27 +134,22 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
         while -10 <= point1.x <= image.width + 10 and -10 <= point1.y <= image.height + 10:
             point2 = point1.add_polar(length, angle)
             point_list.append(point2.coord())
-            match randint(0, 50):
-                case 0:
-                    break
-                case 1:
-                    self.generate_path(image, draw, color,
-                                       point1, angle + randint(-30, 30),
-                                       max(5, width + randint(-5, 5)),
-                                       depth + 1, max_depth)
-                case 2:
-                    draw.ellipse([(point2 - width).coord(),
-                                  (point2 + width).coord()],
-                                 fill=color)
-                case _:
-                    pass
+            if randint(0, 10) == 0:
+                self.generate_path(image, draw, color,
+                                   point1, angle + randint(-30, 30),
+                                   max(5, width + randint(-5, 5)),
+                                   depth + 1, max_depth)
             point1, angle, length = (point2, angle + randint(-20, 20),
                                      randint(20, 200))
-        draw.line(point_list, fill=color, width=width, joint="curve")
+        draw.line(point_list, fill="black", width=width + 2, joint="curve")
+        for i in range(width, 0, -1):
+            h, s, v = rgb_to_hsv(*ImageColor.getcolor(color, "RGB"))
+            r, g, b = map(int, hsv_to_rgb(h, s, v / i ** 0.3))
+            draw.line(point_list, fill=(r, g, b), width=i, joint="curve")
 
     def generate_rivers(self, image, draw):
         point, angle = self.start_point(image)
-        color = (0, 0, 255, 255)
+        color = "blue"
         self.generate_path(image, draw, color, point, angle)
 
     def generate_roads(self, image, draw):
@@ -189,8 +186,10 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
         max_size = 0
         for size, color in size_color:
             max_size = max(max_size, math.ceil(size * size_multiplicator))
-            point1 = center - math.ceil(size * size_multiplicator) - randint(0, 10)
-            point2 = center + math.ceil(size * size_multiplicator) + randint(0, 10)
+            point1 = center - math.ceil(size * size_multiplicator) - randint(0,
+                                                                             10)
+            point2 = center + math.ceil(size * size_multiplicator) + randint(0,
+                                                                             10)
             draw.ellipse([point1.coord(), point2.coord()],
                          fill=color, outline="black", width=2)
         generate_noise(image, center - max_size, center + max_size, 10)
@@ -210,39 +209,37 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
                                               (20, "lightgreen")])
 
     def map_generator(self, node_seed, grid_width, grid_height,
-                      grid_side, bg_color, river, road, trees, rocks):
+                      grid_side, bg_color, river, road, trees, rocks,
+                      positive, negative):
         seed(node_seed)
-        positive, negative = list(), list()
         image_pil, width, height, grid_width, grid_height, grid_side = (
             self._map_generator(node_seed, grid_width, grid_height, grid_side,
                                 bg_color))
         draw = ImageDraw.Draw(image_pil)
 
-        positive.append("Battlemap, outdoor, old medieval.")
-        positive.append("lightgreen background grass with small flowers")
         if river:
             self.generate_rivers(image_pil, draw)
-            positive.append("blue river, water")
+            positive += "blue river, water."
         else:
-            negative.append("blue river, water")
+            negative += "blue river, water."
         if road:
             self.generate_roads(image_pil, draw)
-            positive.append("saddlebrown road")
+            positive += "saddlebrown road."
         else:
-            negative.append("road")
+            negative += "road."
 
         if trees:
             self.generate_trees(image_pil, draw)
-            positive.append("gray rocks")
+            positive += "gray rocks."
         else:
-            negative.append("rocks")
+            negative += "rocks."
 
         if rocks:
             self.generate_rocks(image_pil, draw)
-            positive.append("green trees")
+            positive += "green trees."
         else:
-            negative.append("trees")
+            negative += "trees."
 
         return (pil_to_tensor(image_pil),
                 width, height, grid_width, grid_height, grid_side,
-                ".\n".join(positive), ".\n".join(negative))
+                positive, negative)
