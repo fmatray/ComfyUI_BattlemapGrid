@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from PIL import Image
 from random import randint
+from .point import Point
 
 
 def tensor_to_pil(image_tensor: torch.tensor):
@@ -16,14 +17,14 @@ def pil_to_tensor(image_pil: Image):
     return torch.unsqueeze(image_tensor_out, 0)
 
 
-def generate_noise(image, x1, y1, x2, y2, padding=0):
+def generate_noise(image, point1: Point, point2: Point, padding=0):
     def noise_color(i, j, color_index):
         noise = randint(-128, 128)
         return max(0, min(pixels[i, j][color_index] + noise, 255))
 
     pixels = image.load()
-    for i in range(x1 - padding, x2 + padding):
-        for j in range(y1 - padding, y2 + padding):
+    for i in range(point1.x - padding, point2.x + padding):
+        for j in range(point1.y - padding, point2.y + padding):
             try:
                 pixels[i, j] = (
                     noise_color(i, j, 0),

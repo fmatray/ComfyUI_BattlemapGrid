@@ -3,6 +3,7 @@ import math
 from dataclasses import dataclass
 from random import random, randint, seed, choice
 from .utils import pil_to_tensor, generate_noise
+from .point import Point
 
 
 @dataclass
@@ -16,7 +17,7 @@ class BattlemapMapGenerator:
             "grid_width": ("INT", {"default": 24, "min": 10, "max": 128}),
             "grid_height": ("INT", {"default": 32, "min": 10, "max": 128}),
             "grid_side": ("INT", {"default": 32, "min": 10, "max": 2048}),
-            "bg_color": ("STRING", {"default": "#FFFFFF"}),
+            "bg_color": ("STRING", {"default": "#00FF00"}),
         }
         }
 
@@ -41,16 +42,16 @@ class BattlemapMapGenerator:
 
     def generate_bg(self, image, draw, bg_color):
         r, g, b = ImageColor.getcolor(bg_color, "RGB")
-        step = 5
-        for x in range(0, image.width + step, step):
-            for y in range(0, image.height + step, step):
+        steps = 5
+        for x in range(0, image.width + steps, steps):
+            for y in range(0, image.height + steps, steps):
                 color = (min(abs(r + randint(-100, 100)), 255),
                          min(abs(g + randint(-100, 100)), 255),
                          min(abs(b + randint(-100, 100)), 255))
-                draw.ellipse([(x - step / 2, y - step / 2),
-                              (x + step / 2, y + step / 2)],
-                             fill=color)
-        generate_noise(image, 0, 0, image.width, image.height)
+                point1 = Point(x - int(steps / 2), y - int(steps / 2))
+                point2 = Point(x + int(steps / 2), y + int(steps / 2))
+                draw.ellipse([point1.coord(), point2.coord()], fill=color)
+        generate_noise(image, Point(0, 0), Point(image.width, image.height))
 
     def _map_generator(self, node_seed, grid_width, grid_height,
                        grid_side, bg_color):
@@ -90,12 +91,14 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
 
         })
         return inputs
+
     @classmethod
     @property
     def RETURN_TYPES(cls):
         return_types = list(super().RETURN_TYPES)
         return_types.extend(["STRING", "STRING"])
         return tuple(return_types)
+
     @classmethod
     @property
     def RETURN_NAMES(cls):
@@ -109,18 +112,15 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
     def start_point(self, image):
         match randint(0, 3):
             case 0:
-                point = (randint(0, image.width), 0)
-                angle = randint(200, 340)
+                point = Point(randint(0, image.width), -10)
             case 1:
-                point = (randint(0, image.width), image.height)
-                angle = randint(2, 160)
+                point = Point(randint(0, image.width), image.height + 10)
             case 2:
-                point = (0, randint(0, image.height))
-                angle = 70 - randint(0, 140)
+                point = Point(-10, randint(0, image.height))
             case 3:
-                point = (image.width, randint(0, image.height))
-                angle = randint(110, 250)
-        return point, angle
+                point = Point(image.width + 10, randint(0, image.height))
+        angle = point.angle_between(Point(image.width / 2, image.height / 2))
+        return point, angle + randint(-45, 45)
 
     def generate_path(self, image, draw, color,
                       start_point, start_angle, width=20,
@@ -128,29 +128,25 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
         if depth > max_depth:
             return
         point1, angle, length = start_point, start_angle, randint(100, 150)
-        point_list = [point1]
-        while 0 <= point1[0] <= image.width or 0 <= point1[
-            1] <= image.height:
-            point2 = (
-                int(point1[0] + length * math.cos(angle * math.pi / 180)),
-                int(point1[0] + length * math.sin(angle * math.pi / 180))
-            )
-            point_list.append(point2)
+        point_list = [point1.coord()]
+        while -10 <= point1.x <= image.width + 10 and -10 <= point1.y <= image.height + 10:
+            point2 = point1.add_polar(length, angle)
+            point_list.append(point2.coord())
             match randint(0, 50):
                 case 0:
                     break
                 case 1:
                     self.generate_path(image, draw, color,
-                                       point1, angle + randint(-10, 10),
+                                       point1, angle + randint(-30, 30),
                                        max(5, width + randint(-5, 5)),
                                        depth + 1, max_depth)
                 case 2:
-                    draw.ellipse([(point2[0] - width, point2[1] - width),
-                                  (point2[0] + width, point2[1] + width)],
+                    draw.ellipse([(point2 - width).coord(),
+                                  (point2 + width).coord()],
                                  fill=color)
                 case _:
                     pass
-            point1, angle, length = (point2, angle + randint(-10, 10),
+            point1, angle, length = (point2, angle + randint(-20, 20),
                                      randint(20, 200))
         draw.line(point_list, fill=color, width=width, joint="curve")
 
@@ -165,59 +161,49 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
         self.generate_path(image, draw, color, point, angle)
 
     def generate_stars(self, image, draw, size_color):
-        point = randint(0, image.width), randint(0, image.height)
+        center = Point(randint(0, image.width), randint(0, image.height))
         size_multiplicator = random()
         for size, color in size_color:
             for angle in range(0, 360, 5):
-                l = max(size / 5, size * random() * size_multiplicator)
-                x = point[0] + math.ceil(l * math.cos(angle * math.pi / 180))
-                y = point[1] + math.ceil(l * math.sin(angle * math.pi / 180))
-                draw.line([point, (x, y)],
+                length = max(size / 5, size * random() * size_multiplicator)
+                point = center.add_polar(length, angle)
+                draw.line([center.coord(), point.coord()],
                           fill=color, width=7 + randint(-2, 2))
-        generate_noise(image, point[0] - size, point[1] - size,
-                       point[0] + size, point[1] + size, 10)
+        generate_noise(image, center - size, center + size, 10)
 
     def generate_polygon(self, image, draw, size_color, nb_point):
-        point = randint(0, image.width), randint(0, image.height)
+        center = Point(randint(0, image.width), randint(0, image.height))
         size_multiplicator = max(0.5, random())
         for size, color in size_color:
             point_list = list()
             for angle in range(0, 360, int(360 / nb_point)):
-                l = max(size / 5, size * random() * size_multiplicator)
-                x = point[0] + math.ceil(l * math.cos(angle * math.pi / 180))
-                y = point[1] + math.ceil(l * math.sin(angle * math.pi / 180))
-                point_list.append((x, y))
+                length = max(size / 5, size * random() * size_multiplicator)
+                point = center.add_polar(length, angle)
+                point_list.append(point.coord())
             draw.polygon(point_list, fill=color, outline="black", width=2)
-        generate_noise(image, point[0] - size, point[1] - size,
-                       point[0] + size, point[1] + size, 10)
+        generate_noise(image, center - size, center + size, 10)
 
     def generate_ellipses(self, image, draw, size_color):
-        point = randint(0, image.width), randint(0, image.height)
-        x_min, y_min = image.width, image.height
-        x_max, y_max = 0, 0
+        center = Point(randint(0, image.width), randint(0, image.height))
         size_multiplicator = random()
+        max_size = 0
         for size, color in size_color:
-            _size = math.ceil(size * size_multiplicator)
-            x1, y1 = (point[0] - _size + randint(-5, 5),
-                      point[1] - _size + randint(-5, 5))
-            x2, y2 = (point[0] + _size + randint(-5, 5),
-                      point[1] + _size + randint(-5, 5))
-            x_min, y_min = min(x_min, x1), min(y_min, y1)
-            x_max, y_max = max(x_max, x2), max(y_max, y2)
-            draw.ellipse(
-                [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))],
-                fill=color, outline="black", width=2)
-        generate_noise(image, x_min, y_min, x_max, y_max, 10)
+            max_size = max(max_size, math.ceil(size * size_multiplicator))
+            point1 = center - math.ceil(size * size_multiplicator) - randint(0, 10)
+            point2 = center + math.ceil(size * size_multiplicator) + randint(0, 10)
+            draw.ellipse([point1.coord(), point2.coord()],
+                         fill=color, outline="black", width=2)
+        generate_noise(image, center - max_size, center + max_size, 10)
 
     def generate_rocks(self, image, draw):
         for i in range(10):
-            self.generate_polygon(image, draw, [(60, "#111111"),
-                                                (50, "darkgray"),
-                                                (40, "gray")],
-                                  choice([3, 4, 5, 6, 8, 9, 10]))
+            self.generate_ellipses(image, draw, [(60, "#111111"),
+                                                 (50, "darkgray"),
+                                                 (40, "gray")])
+            # choice([3, 4, 5, 6, 8, 9, 10])
 
     def generate_trees(self, image, draw):
-        for i in range(30):
+        for i in range(100):
             self.generate_stars(image, draw, [(45, "darkgray"),
                                               (40, "darkgreen"),
                                               (30, "green"),
@@ -227,10 +213,10 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
                       grid_side, bg_color, river, road, trees, rocks):
         seed(node_seed)
         positive, negative = list(), list()
-        width, height = grid_width * grid_side, grid_height * grid_side
-        image_pil = self.generate_image(width, height, bg_color)
+        image_pil, width, height, grid_width, grid_height, grid_side = (
+            self._map_generator(node_seed, grid_width, grid_height, grid_side,
+                                bg_color))
         draw = ImageDraw.Draw(image_pil)
-        self.generate_bg(image_pil, draw, bg_color)
 
         positive.append("Battlemap, outdoor, old medieval.")
         positive.append("lightgreen background grass with small flowers")
@@ -246,13 +232,13 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
             negative.append("road")
 
         if trees:
-            self.generate_rocks(image_pil, draw)
+            self.generate_trees(image_pil, draw)
             positive.append("gray rocks")
         else:
             negative.append("rocks")
 
         if rocks:
-            self.generate_trees(image_pil, draw)
+            self.generate_rocks(image_pil, draw)
             positive.append("green trees")
         else:
             negative.append("trees")

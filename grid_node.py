@@ -2,8 +2,11 @@ import torch
 from aggdraw import Draw, Brush, Pen
 import math
 from .utils import tensor_to_pil, pil_to_tensor
+from .point import Point
+from dataclasses import dataclass
 
 
+@dataclass
 class BaseHexagonGenerator(object):
     """
     Abstract classe for hexagon generators for hexagons of the specified size.
@@ -11,10 +14,8 @@ class BaseHexagonGenerator(object):
     https://variable-scope.com/posts/hexagon-tilings-with-pytho
     """
 
-    def __init__(self, edge_length, center_x=0, center_y=0):
-        self.edge_length = edge_length
-        self.center_x = center_x
-        self.center_y = center_y
+    edge_length: int = 0
+    center: Point = None
 
     @property
     def col_width(self):
@@ -27,9 +28,9 @@ class BaseHexagonGenerator(object):
 
 class HorizontalHexagonGenerator(BaseHexagonGenerator):
     def __call__(self, row, col):
-        x = self.center_x + self.col_width / 3 + (
+        x = self.center.x + self.col_width / 3 + (
                 col + 0.5 * (row % 2)) * self.col_width
-        y = self.center_y + row * self.row_height
+        y = self.center.y + row * self.row_height
         for angle in range(0, 360, 60):
             x += math.cos(math.radians(angle)) * self.edge_length
             y += math.sin(math.radians(angle)) * self.edge_length
@@ -39,8 +40,8 @@ class HorizontalHexagonGenerator(BaseHexagonGenerator):
 
 class VerticalHexagonGenerator(BaseHexagonGenerator):
     def __call__(self, row, col):
-        x = self.center_x + row * self.row_height
-        y = self.center_y + self.col_width / 3 + (
+        x = self.center.x + row * self.row_height
+        y = self.center.y + self.col_width / 3 + (
                 col + 0.5 * (row % 2)) * self.col_width
         for angle in range(0, 360, 60):
             x += math.sin(math.radians(angle)) * self.edge_length
@@ -71,18 +72,17 @@ class BattlemapGrid:
     FUNCTION = "grid_overlay"
     CATEGORY = "Battlemaps"
 
-    def square_grid(self, image, draw, center_x, center_y,
+    def square_grid(self, image, draw, center,
                     pen, grid_side):
-        for i in range(0, max(center_x, center_y), grid_side):
-            draw.line((center_x - i, 0, center_x - i, image.height), pen)
-            draw.line((center_x + i, 0, center_x + i, image.height), pen)
-            draw.line((0, center_y - i, image.width, center_y - i), pen)
-            draw.line((0, center_y + i, image.width, center_y + i), pen)
+        for i in range(0, max(center.x, center.y), grid_side):
+            draw.line((center.x - i, 0, center.x - i, image.height), pen)
+            draw.line((center.x + i, 0, center.x + i, image.height), pen)
+            draw.line((0, center.y - i, image.width, center.y - i), pen)
+            draw.line((0, center.y + i, image.width, center.y + i), pen)
 
-    def hexagon_grid(self, HexagonGenerator: BaseHexagonGenerator,
-                     image, draw, center_x, center_y,
-                     pen, grid_side):
-        hexagon_generator = HexagonGenerator(grid_side, center_x, center_y)
+    def hexagon_grid(self, hexagon_generator: BaseHexagonGenerator,
+                     image, draw, center, pen, grid_side):
+        hexagon_generator = hexagon_generator(grid_side, center)
         nb_row = math.ceil(
             (image.height / hexagon_generator.row_height) / 2) + 2
         nb_col = math.ceil((image.width / hexagon_generator.col_width) / 2) + 2
@@ -99,18 +99,16 @@ class BattlemapGrid:
 
         draw = Draw(image_pil)
         pen = Pen((red, green, blue, alpha), line_width)
-        center_x, center_y = int(image_pil.width / 2), int(image_pil.height / 2)
+        center = Point(int(image_pil.width / 2), int(image_pil.height / 2))
         if grid_type == "square":
-            self.square_grid(image_pil, draw, center_x, center_y, pen,
+            self.square_grid(image_pil, draw, center, pen,
                              grid_side)
         elif grid_type == "vertical hexagon":
             self.hexagon_grid(VerticalHexagonGenerator,
-                              image_pil, draw, center_x, center_y,
-                              pen, grid_side)
+                              image_pil, draw, center, pen, grid_side)
         elif grid_type == "horizontal hexagon":
             self.hexagon_grid(HorizontalHexagonGenerator,
-                              image_pil, draw, center_x, center_y,
-                              pen, grid_side)
+                              image_pil, draw, center, pen, grid_side)
         else:
             raise Exception
         draw.flush()
