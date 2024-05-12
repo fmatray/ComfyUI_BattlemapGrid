@@ -55,16 +55,26 @@ class BattlemapGrid:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {
-            "image": ("IMAGE",),
-            "grid_type": (cls._grid_type, {"default": "square"}),
-            "grid_side": ("INT", {"default": 64, "min": 10, "max": 2048}),
-            "line_width": ("INT", {"default": 1, "min": 1, "max": 20}),
-            "red": ("INT", {"default": 255, "min": 0, "max": 255}),
-            "green": ("INT", {"default": 255, "min": 0, "max": 255}),
-            "blue": ("INT", {"default": 255, "min": 0, "max": 255}),
-            "alpha": ("INT", {"default": 255, "min": 0, "max": 255}),
-        }
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "grid_type": (cls._grid_type, {"default": "square"}),
+                "grid_side": ("INT", {"default": 64, "min": 10, "max": 2048}),
+                "line_width": ("INT", {"default": 1, "min": 1, "max": 20}),
+                "red": ("INT", {"default": 255, "min": 0, "max": 255}),
+                "green": ("INT", {"default": 255, "min": 0, "max": 255}),
+                "blue": ("INT", {"default": 255, "min": 0, "max": 255}),
+                "alpha": ("INT", {"default": 255, "min": 0, "max": 255})
+            },
+            "optional": {
+                "orig_grid_width": ("INT",
+                                    {"default": None, "min": 0, "max": 128,
+                                     "forceInput": True}),
+                "orig_grid_height": ("INT",
+                                     {"default": None, "min": 00, "max": 128,
+                                      "forceInput": True}),
+
+            }
         }
 
     RETURN_TYPES = ("IMAGE",)
@@ -93,13 +103,19 @@ class BattlemapGrid:
 
     def grid_overlay(self, image: torch.Tensor,
                      grid_type: str, grid_side: int, line_width: int,
-                     red: int, green: int, blue: int, alpha: int):
+                     red: int, green: int, blue: int, alpha: int,
+                     orig_grid_width=None, orig_grid_height=None):
         image_pil = tensor_to_pil(image)
         # Create Grid
 
         draw = Draw(image_pil)
         pen = Pen((red, green, blue, alpha), line_width)
         center = Point(int(image_pil.width / 2), int(image_pil.height / 2))
+        if (orig_grid_width and orig_grid_height):
+            width_rate = (image_pil.width / orig_grid_width)
+            height_rate = (image_pil.height / orig_grid_height)
+            if 0.99 <= (width_rate / height_rate) <= 1.01:
+                grid_side = round(image_pil.width / orig_grid_width)
         if grid_type == "square":
             self.square_grid(image_pil, draw, center, pen,
                              grid_side)
