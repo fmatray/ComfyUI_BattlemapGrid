@@ -2,7 +2,8 @@ from PIL import Image, ImageDraw, ImageColor, ImageFilter
 import math
 from dataclasses import dataclass
 from colorsys import rgb_to_hsv, hsv_to_rgb
-from random import random, randint, seed, choice
+from random import random, randint, choice
+from random import seed as rseed
 from .utils import pil_to_tensor, generate_noise
 from .point import Point
 from .path import Path
@@ -11,11 +12,10 @@ from .path import Path
 @dataclass
 class BattlemapMapGenerator:
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls) -> dict:
         return {"required": {
-            "node_seed": (
-                "INT", {"default": 0, "min": -1, "max": 0xffffffffffffffff,
-                        "step": 1, "label": "seed", "forceInput": True}),
+            "seed": (
+                "INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             "grid_width": ("INT", {"default": 24, "min": 10, "max": 128}),
             "grid_height": ("INT", {"default": 32, "min": 10, "max": 128}),
             "grid_side": ("INT", {"default": 32, "min": 10, "max": 2048}),
@@ -25,24 +25,24 @@ class BattlemapMapGenerator:
 
     @classmethod
     @property
-    def RETURN_TYPES(cls):
+    def RETURN_TYPES(cls) -> tuple:
         return ("IMAGE", "INT", "INT",
                 "INT", "INT", "INT")
 
     @classmethod
     @property
-    def RETURN_NAMES(cls):
+    def RETURN_NAMES(cls) -> tuple:
         return ("image", "image width", "image height",
                 "grid width", "grid height", "grid side")
 
     FUNCTION = "map_generator"
     CATEGORY = "Battlemaps"
 
-    def generate_image(self, width, height, bg_color):
+    def generate_image(self, width: int, height: int, bg_color: str) -> Image:
         image = Image.new("RGBA", (width, height), bg_color)
         return image
 
-    def generate_bg(self, image, draw, bg_color):
+    def generate_bg(self, image: Image, draw: ImageDraw.Draw, bg_color: str):
         r, g, b = ImageColor.getcolor(bg_color, "RGB")
         steps = 5
         for x in range(0, image.width + steps, steps):
@@ -55,9 +55,9 @@ class BattlemapMapGenerator:
                 draw.ellipse([point1.coord(), point2.coord()], fill=color)
         generate_noise(image, Point(0, 0), Point(image.width, image.height))
 
-    def _map_generator(self, node_seed, grid_width, grid_height,
-                       grid_side, bg_color):
-        seed(node_seed)
+    def _map_generator(self, seed: int, grid_width: int, grid_height: int,
+                       grid_side: int, bg_color: str) -> tuple:
+        rseed(seed)
         width, height = grid_width * grid_side, grid_height * grid_side
         image_pil = self.generate_image(width, height, bg_color)
         draw = ImageDraw.Draw(image_pil)
@@ -65,10 +65,10 @@ class BattlemapMapGenerator:
 
         return (image_pil, width, height, grid_width, grid_height, grid_side)
 
-    def map_generator(self, node_seed, grid_width, grid_height,
-                      grid_side, bg_color):
+    def map_generator(self, seed: int, grid_width: int, grid_height: int,
+                      grid_side: int, bg_color: str) -> tuple:
         image_pil, width, height, grid_width, grid_height, grid_side = self._map_generator(
-            node_seed, grid_width, grid_height, grid_side, bg_color)
+            seed, grid_width, grid_height, grid_side, bg_color)
         return (pil_to_tensor(image_pil),
                 width, height, grid_width, grid_height, grid_side)
 
@@ -98,27 +98,27 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
 
     @classmethod
     @property
-    def RETURN_TYPES(cls):
+    def RETURN_TYPES(cls) -> tuple:
         return_types = list(super().RETURN_TYPES)
         return_types.extend(["STRING", "STRING"])
         return tuple(return_types)
 
     @classmethod
     @property
-    def RETURN_NAMES(cls):
+    def RETURN_NAMES(cls) -> tuple:
         return_names = list(super().RETURN_NAMES)
         return_names.extend(["positive prompt", "negative prompt"])
         return tuple(return_names)
 
-    def generator_flowers(self, image, draw):
-        for i in range(100, 500):
+    def generator_flowers(self, image: Image, draw: ImageDraw.Draw):
+        for _ in range(100, 500):
             point = Point(randint(0, image.width), randint(0, image.height))
             size = randint(2, 6)
             draw.ellipse([(point - size).coord(), (point + size).coord()],
                          fill=choice(list(ImageColor.colormap.keys())),
                          outline="black", width=2)
 
-    def start_point(self, image):
+    def start_point(self, image: Image) -> tuple[Point, int]:
         match randint(0, 3):
             case 0:
                 point = Point(randint(0, image.width), -10)
@@ -131,9 +131,10 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
         angle = point.angle_between(Point(image.width / 2, image.height / 2))
         return point, angle + randint(-45, 45)
 
-    def generate_path(self, image, paths: list[Path], start_point, start_angle,
-                      width=20,
-                      depth=0, depth_max=5):
+    def generate_path(self, image: Image, paths: list[Path],
+                      start_point: Point, start_angle: int,
+                      width: int = 20,
+                      depth: int = 0, depth_max: int = 5):
         if depth > depth_max or width <= 5:
             return
         point1, angle, length = start_point, start_angle, randint(100, 150)
@@ -150,13 +151,11 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
                     self.generate_path(image, paths, point1, new_angle,
                                        width=math.ceil(width * 2 / 3),
                                        depth=depth + 1, depth_max=depth_max)
-                case _:
-                    pass
             point1, angle, length = (point2, angle + randint(-20, 20),
                                      randint(20, 200))
         paths.append(path)
 
-    def draw_path(self, draw, color, paths: list):
+    def draw_path(self, draw: ImageDraw.Draw, color: str, paths: list):
         width_max = 0
         for path in paths:
             width_max = max(width_max, path.width)
@@ -168,19 +167,20 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
             for path in filter(lambda x: x.width <= width_max, paths):
                 draw.line(path.coord(), fill=(r, g, b), width=i, joint="curve")
 
-    def generate_rivers(self, image, draw):
+    def generate_rivers(self, image: Image, draw: ImageDraw.Draw):
         point, angle = self.start_point(image)
         paths = list()
         self.generate_path(image, paths, point, angle)
         self.draw_path(draw, "blue", paths)
 
-    def generate_roads(self, image, draw):
+    def generate_roads(self, image: Image, draw: ImageDraw.Draw):
         point, angle = self.start_point(image)
         paths = list()
         self.generate_path(image, paths, point, angle)
         self.draw_path(draw, "saddlebrown", paths)
 
-    def generate_stars(self, image, draw, size_color):
+    def generate_stars(self, image: Image, draw: ImageDraw.Draw,
+                       size_color: list):
         center = Point(randint(0, image.width), randint(0, image.height))
         size_multiplicator = random()
         for size, color in size_color:
@@ -194,7 +194,8 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
                           fill=color, width=witdh)
         generate_noise(image, center - size, center + size, 10)
 
-    def generate_polygon(self, image, draw, size_color, nb_point):
+    def generate_polygon(self, image: Image, draw: ImageDraw.Draw,
+                         size_color: list, nb_point: int):
         center = Point(randint(0, image.width), randint(0, image.height))
         size_multiplicator = max(0.5, random())
         for size, color in size_color:
@@ -206,7 +207,8 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
             draw.polygon(point_list, fill=color, outline="black", width=2)
         generate_noise(image, center - size, center + size, 10)
 
-    def generate_ellipses(self, image, draw, size_color):
+    def generate_ellipses(self, image: Image, draw: ImageDraw.Draw,
+                          size_color: list):
         center = Point(randint(0, image.width), randint(0, image.height))
         size_multiplicator = random()
         size_max = 0
@@ -220,26 +222,28 @@ class BattlemapMapGeneratorOutdoors(BattlemapMapGenerator):
                          fill=color, outline="black", width=2)
         generate_noise(image, center - size_max, center + size_max, 10)
 
-    def generate_rocks(self, image, draw):
-        for i in range(10):
+    def generate_rocks(self, image: Image, draw: ImageDraw.Draw):
+        for _ in range(10):
             self.generate_polygon(image, draw, [(50, "#111111"),
                                                 (35, "darkgray"),
                                                 (25, "gray")],
                                   choice([3, 4, 5, 6, 8, 9]))
 
-    def generate_trees(self, image, draw):
-        for i in range(100):
+    def generate_trees(self, image: Image, draw: ImageDraw.Draw):
+        for _ in range(100):
             self.generate_stars(image, draw, [(45, "darkgray"),
                                               (40, "darkgreen"),
                                               (30, "green"),
                                               (20, "lightgreen")])
 
-    def map_generator(self, node_seed, grid_width, grid_height,
-                      grid_side, bg_color, river, road, rocks, trees,
-                      positive, negative):
-        seed(node_seed)
+    def map_generator(self, seed: int, grid_width: int, grid_height: int,
+                      grid_side: int, bg_color: str,
+                      river: bool=False, road: bool=False,
+                      rocks: bool=False, trees: bool=False,
+                      positive: str = "", negative: str = ""):
+        rseed(seed)
         image, width, height, grid_width, grid_height, grid_side = (
-            self._map_generator(node_seed, grid_width, grid_height, grid_side,
+            self._map_generator(seed, grid_width, grid_height, grid_side,
                                 bg_color))
         draw = ImageDraw.Draw(image)
         self.generator_flowers(image, draw)
