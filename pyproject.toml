@@ -1,0 +1,14 @@
+[project]
+name = "comfyui_battlemapgrid"
+description = "Nodes for ComfyUI in order to generate battelmaps"
+version = "1.0.0"
+license = "LICENSE"
+
+[project.urls]
+Repository = "https://github.com/fmatray/ComfyUI_BattlemapGrid"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "ComfyUI_BattlemapGrid"
+Icon = ""
